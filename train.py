@@ -4,7 +4,7 @@ import pandas as pd
 from models import model_package
 from utils import config_load, color_print, data_preprocess, create_dataset
 from lightning.pytorch import Trainer
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_forecasting.metrics import CrossEntropy, QuantileLoss
 
 if __name__ == '__main__':
@@ -26,9 +26,9 @@ if __name__ == '__main__':
     num_workers = config['train']['num_workers']
     batch = config['train']['batch']
     epochs = config['train']['epochs']
-    optimizer = config['train']['optimizer']
     lr = config['train']['lr']
     dropout = config['train']['dropout']
+    patience = config['train']['patience']
 
     for key, value in config.items():
         color_print(f"{key}: {value}", color='yellow', bold=False)
@@ -42,21 +42,21 @@ if __name__ == '__main__':
     dataset = create_dataset(df_processed, max_encoder_length, max_prediction_length)
     color_print(f"Dataset created.", color='light_green', bold=False)
 
-    # dataloaders
+    # create dataloaders
     train_dataloader = dataset.to_dataloader(train=True, batch_size=batch, num_workers=num_workers)
     val_dataloader = dataset.to_dataloader(train=False, batch_size=batch, num_workers=num_workers)
     color_print(f"Dataloaders created.", color='light_green', bold=False)
 
-    # loss function
+    # define loss function
     criterion = QuantileLoss()
     color_print(f"Loss Function: {criterion.__class__.__name__}", color='cyan', bold=False)
 
-    # optimizer
-    optimizer = optimizer
-    color_print(f"Optimizer: {optimizer.__class__.__name__}", color='cyan', bold=False)
+    # define optimizer
+    optimizer_name = config['train']['optimizer']
+    color_print(f"Optimizer: {optimizer_name}", color='cyan', bold=False)
 
-    # model
-    model = model_package(dataset, criterion, optimizer,
+    # load model
+    model = model_package(dataset, criterion, optimizer_name,
                         lr, dropout, 
                         hidden_size, hidden_continuous_size, attention_head_size)
     model_name = model.__class__.__name__
@@ -72,11 +72,22 @@ if __name__ == '__main__':
         mode="min", # mode for the monitored metric ('min' for loss)
         save_weights_only=True, # Save only the model weights
     )
+
+    # early stopping
+    early_stopping = EarlyStopping(
+        monitor='val_loss',
+        patience=patience, # number of epochs with no improvement after which training will be stopped
+        verbose=True,
+        mode='min'
+    )
     
-    # training
+    # set up callbacks
+    callbacks = [checkpoint_callback, early_stopping]
+
+    # train
     color_print(f"Training started...", color='blue', bold=True)
     trainer = Trainer(max_epochs=epochs, 
                     accelerator=device, devices=1 if device=='cuda' else 0,
-                    callbacks=[checkpoint_callback])
+                    callbacks=callbacks)
     trainer.fit(model, train_dataloader, val_dataloader)
     color_print(f"Training completed. Model saved at: {checkpoint_path}", color='blue', bold=True)

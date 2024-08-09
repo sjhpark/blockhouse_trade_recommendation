@@ -11,9 +11,10 @@ model:
   max_prediction_length: 10  # number of future time steps the model is expected to predict
 
 train: # for PyTorch Lightning's TFT (Temporal Fusion Transformer) model
-  num_workers: 4
+  num_workers: 2
   batch: 32
   epochs: 5
-  optimizer: 'Ranger' # 'Adam', 'AdamW', 'Ranger', 'RangerQH'
+  optimizer: 'AdamW' # 'Adam', 'AdamW', 'Ranger', etc.
   lr: 0.002
   dropout: 0.3 # between 0.1 and 0.3 are good values
+  patience: 3 # number of epochs to wait before early stopping

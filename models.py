@@ -2,7 +2,7 @@ import torch.nn as nn
 from pytorch_forecasting import TemporalFusionTransformer, TimeSeriesDataSet
 from utils import color_print
 
-def model_package(training:TimeSeriesDataSet, criterion:nn.Module, optimizer:str,
+def model_package(training:TimeSeriesDataSet, criterion:nn.Module, optimizer_name:str,
                   lr:float, dropout:float,
                   hidden_size:int, hidden_continuous_size:int, 
                   attention_head_size:int, ) -> TemporalFusionTransformer:
@@ -13,7 +13,7 @@ def model_package(training:TimeSeriesDataSet, criterion:nn.Module, optimizer:str
     model = TemporalFusionTransformer.from_dataset(
         training,
         loss=criterion,
-        optimizer=optimizer,
+        optimizer=optimizer_name,
         learning_rate=lr,
         dropout=dropout,  
         hidden_size=hidden_size, 
