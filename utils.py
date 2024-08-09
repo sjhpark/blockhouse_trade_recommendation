@@ -1,8 +1,7 @@
 import yaml
 import termcolor
 import pandas as pd
-import torch
-from torch.utils.data import Dataset
+from pytorch_forecasting import TimeSeriesDataSet
 
 def color_print(text:str, color:str='green', bold:bool=True) -> None:
     bold = ['bold'] if bold else []
@@ -15,6 +14,13 @@ def config_load(config_path:str) -> dict:
         config = yaml.safe_load(file)
     return config
 
+def round_unix(time:int) -> int:
+    """
+    Round the unix timestamp (in nanoseconds) to be in seconds.
+    This is for passing in the correct time format for the Pytorch Forecasting's TimeSeriesDataSet object.
+    """
+    return int(time / 1e9)
+
 def signal_map(side:str) -> str:
     """
     Map the side (aggressor in trade) to corresponding trading signal.
@@ -24,78 +30,52 @@ def signal_map(side:str) -> str:
     - N (None; No aggressor): Hold
     """
     if side == 'A':
-        return 'Sell'
+        return 0 # 'Sell'
     elif side == 'B':
-        return 'Buy'
+        return 1 # 'Buy'
     else:
-        return 'Hold'
+        return 2 # 'Hold'
     
-def drop_single_value_vars(df:pd.DataFrame) -> pd.DataFrame:
-    """Drop columns (variables) that have only one unique value.
-    Because they are not useful for training the model."""
-    # find indepedent variables that have a single value.
-    single_value_vars = []
-    for col in df.columns:
-        if len(df[col].unique()) == 1:
-            single_value_vars.append(col)
-    color_print(f"Single-value variables to drop from dataset: {single_value_vars}", color='red', bold=False)
-    return df.drop(columns=single_value_vars)
+def get_single_value_vars(df:pd.DataFrame) -> list:
+    """Get the columns that have only one value."""
+    return [col for col in df.columns if df[col].nunique() == 1]
 
 def data_preprocess(df:pd.DataFrame) -> pd.DataFrame:
     """Preprocess the data for analysis."""
-    # Drop columns with single value
-    df = drop_single_value_vars(df)
-    # Map 'side' to 'signal' (Buy, Sell, Hold) and add it as a new column
+    # round the unix timestamp to seconds
+    df['ts_recv'] = df['ts_recv'].apply(round_unix)
+    # map 'side' to 'signal' (0 for Buy, 1 for Sell, 2 for Hold) and add it as a new column
     df['signal'] = df['side'].apply(signal_map)
+    # drop side column
+    df.drop(columns='side', inplace=True)
+    # drop ts_event column
+    df.drop(columns='ts_event', inplace=True)
     # replace NaN with 0
     df.fillna(0, inplace=True)
     return df
 
-class TBBO_Dataset(Dataset):
-    def __init__(self, df_processed, tokenizer, max_len):
-        """
-        df_processed is the market data in TBBO Schema (https://databento.com/datasets/XNAS.ITCH) after preprocessing.
-        """
-        self.data = df_processed
-        self.tokenizer = tokenizer
-        self.max_len = max_len # max token length
-        self.signal2int = {'Buy': 0, 'Sell': 1, 'Hold': 2} # mapping of signal to integer
+def create_dataset(df_processed:pd.DataFrame,
+            max_encoder_length:int, max_prediction_length:int) -> TimeSeriesDataSet:
+    """Create a TimeSeriesDataSet object from the DataFrame."""
+    target_var = 'signal'
+    static_vars = get_single_value_vars(df_processed)
+    static_categorical_vars = [col for col in static_vars if df_processed[col].dtype == 'object']
+    static_numerical_vars = [col for col in static_vars if col not in static_categorical_vars]
+    dynamic_numerical_vars = [col for col in df_processed.columns if col not in static_vars and col != target_var]
 
-    def __len__(self):
-        return len(self.data)
+    dataset = TimeSeriesDataSet(
+        df_processed,
+        time_idx="ts_recv", # timestamp
+        target=target_var, # target variable
+        group_ids=["instrument_id"],
+        max_encoder_length=max_encoder_length,  # number of historical time steps to use for making predictions
+        max_prediction_length=max_prediction_length,  # number of future time steps the model is expected to predict
+        static_categoricals=static_categorical_vars, # categorical single-value variables
+        static_reals=static_numerical_vars, # static real (numerical) variables
+        time_varying_known_reals=dynamic_numerical_vars, # Dynamic real (numerical) variables
+        time_varying_unknown_reals=[],
+        allow_missing_timesteps=True, # Handle time difference between steps > 1
+    )
+    return dataset
 
-    def __getitem__(self, idx):
-        row = self.data.iloc[idx] # row of both dependent and independent variables
-        row_ind_var = row.drop(['side', 'signal']) # row of independent variables
-        
-        # ================ Feature Extraction from Independent Variables ================
-        # features from independent variables
-        var_names = row_ind_var.index.tolist()
-        features = row_ind_var[var_names].values # all the independent variables are numerical here
-
-        # convert to string b/c BERT tokenizer expects string
-        features = ' '.join([str(feature) for feature in features]) # BERT expects [batch_size, seq_len], so concat all the features into a single string
-        
-        # Tokenize the text (string) data
-        inputs = self.tokenizer(
-            features,
-            max_length=self.max_len,
-            padding='max_length',
-            truncation=True,
-            return_tensors='pt'
-        )
-        
-        # Extract input IDs and attention mask
-        input_ids = inputs['input_ids'].squeeze(0) # remove batch dim
-        attention_mask = inputs['attention_mask'].squeeze(0) # remove batch dim
-
-        # ================ Target Extraction from Dependent Variable ================
-
-        # target (dependent variable)
-        target = row['signal'] # categorical [Buy, Sell, Hold]
-        target = self.signal2int[target] # convert to integer
-        target = torch.tensor(target, dtype=torch.long)
-
-        # return features, target
-        return input_ids, attention_mask, target
 

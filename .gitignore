@@ -1,2 +1,4 @@
-# data paths
+# paths
 xnas-itch-20230703.tbbo.csv
+checkpoints
+lightning_logs

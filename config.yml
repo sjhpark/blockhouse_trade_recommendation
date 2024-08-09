@@ -1,12 +1,19 @@
-data:
-  path: 'xnas-itch-20230703.tbbo.csv'
+path:
+  data: 'xnas-itch-20230703.tbbo.csv'
+  checkpoint: 'checkpoints'
 
 model:
-  name: 'bert-base-uncased'
-  max_len: 128 # max token length
   device: 'cuda' # 'cuda' or 'cpu'
+  hidden_size: 8 # most important hyperparameter apart from learning rate
+  hidden_continuous_size: 8 # set to <= hidden_size
+  attention_head_size: 4 # number of attention heads. Set to up to 4 for large datasets
+  max_encoder_length: 50 # number of historical time steps to use for making predictions
+  max_prediction_length: 10  # number of future time steps the model is expected to predict
 
-train:
-  batch: 8
-  epochs: 10
-  lr: 0.00002
+train: # for PyTorch Lightning's TFT (Temporal Fusion Transformer) model
+  num_workers: 4
+  batch: 32
+  epochs: 5
+  optimizer: 'Ranger' # 'Adam', 'AdamW', 'Ranger', 'RangerQH'
+  lr: 0.002
+  dropout: 0.3 # between 0.1 and 0.3 are good values
