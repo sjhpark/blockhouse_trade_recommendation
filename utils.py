@@ -62,7 +62,6 @@ def create_dataset(df_processed:pd.DataFrame,
     static_categorical_vars = [col for col in static_vars if df_processed[col].dtype == 'object']
     static_numerical_vars = [col for col in static_vars if col not in static_categorical_vars]
     dynamic_numerical_vars = [col for col in df_processed.columns if col not in static_vars and col != target_var]
-
     dataset = TimeSeriesDataSet(
         df_processed,
         time_idx="ts_recv", # timestamp
@@ -76,6 +75,12 @@ def create_dataset(df_processed:pd.DataFrame,
         time_varying_unknown_reals=[],
         allow_missing_timesteps=True, # Handle time difference between steps > 1
     )
+    color_print("TimeSeriesDataSet object created with following attributes.", color='light_green', bold=False)
+    color_print(f"\ttime_idx: {dataset.time_idx}", color='light_yellow', bold=False)
+    color_print(f"\ttarget: {dataset.target}", color='light_yellow', bold=False)
+    color_print(f"\tgroup_ids: {dataset.group_ids}", color='light_yellow', bold=False)
+    color_print(f"\tstatic_categoricals: {dataset.static_categoricals}", color='light_yellow', bold=False)
+    color_print(f"\tstatic_reals: {dataset.static_reals}", color='light_yellow', bold=False)
+    color_print(f"\ttime_varying_known_reals: {dataset.time_varying_known_reals}", color='light_yellow', bold=False)
+    color_print(f"\ttime_varying_unknown_reals: {dataset.time_varying_unknown_reals}", color='light_yellow', bold=False)
     return dataset
-
-
